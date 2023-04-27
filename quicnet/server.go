@@ -39,7 +39,6 @@ func (s *Server) Accept() (*Client, error) {
 
 	return &Client{
 		session: session,
-		stream: stream,
-		}, nil
-		}
-		
+		stream:  stream,
+	}, nil
+}
