@@ -2,6 +2,7 @@ package quicnet
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -36,8 +37,8 @@ const (
 
 type ScriptResult struct {
 	Code      ScriptErrorCode
-	Stdout    chan string
-	Stderr    chan string
+	Stdout    string
+	Stderr    string
 	Error     string
 	ExitCode  int
 	StartTime time.Time
@@ -72,6 +73,7 @@ func (st *ScriptTask) GetContent() []byte {
 func (st *ScriptTask) Run() error {
 	// 实现运行脚本的逻辑
 	// ...
+	NewCmdRunner().RunScript(st)
 	return nil
 }
 
@@ -84,4 +86,25 @@ func (st *ScriptTask) Stop() error {
 func (st *ScriptTask) SetStatus(status TaskStatus) {
 	st.Status = status
 	st.Updated = time.Now()
+}
+
+func HandlerScriptTask(msg *Message, c *Client) (err error) {
+	var reqtask ScriptTaskRequest
+	err = json.Unmarshal(msg.Data, &reqtask)
+	if err != nil {
+		return
+	}
+
+	scriptTask := NewScriptTask(&reqtask)
+	err = scriptTask.Run()
+	if err != nil {
+		return
+	}
+	data, err := json.Marshal(scriptTask.ScriptResult)
+	if err != nil {
+		return
+	}
+	msg.Data = data
+	c.WriteResponse(msg)
+	return
 }

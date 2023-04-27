@@ -25,10 +25,6 @@ func (cr *CmdRunner) RunScript(reqtask *ScriptTask) {
 	r := reqtask.ScriptResult
 
 	// 关闭输出通道
-	defer func() {
-		close(reqtask.ScriptResult.Stdout)
-		close(reqtask.ScriptResult.Stderr)
-	}()
 
 	if len(reqtask.Interpreter) == 0 {
 		reqtask.Interpreter = defaultInterpreter
@@ -103,7 +99,7 @@ func (cr *CmdRunner) RunScript(reqtask *ScriptTask) {
 			if err != nil {
 				break
 			}
-			reqtask.ScriptResult.Stdout <- line
+			reqtask.ScriptResult.Stdout += line
 		}
 	}()
 
@@ -117,7 +113,7 @@ func (cr *CmdRunner) RunScript(reqtask *ScriptTask) {
 			if err != nil {
 				break
 			}
-			reqtask.ScriptResult.Stderr <- line
+			reqtask.ScriptResult.Stderr += line
 		}
 	}()
 	startTime := time.Now()

@@ -1,18 +1,30 @@
 package quicnet
 
 import (
-	"crypto/tls"
-	"io"
-	"encoding/binary"
 	"context"
+	"crypto/tls"
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net"
+	"time"
 
-
+	"github.com/denisbrodbeck/machineid"
+	"github.com/google/uuid"
 	quic "github.com/quic-go/quic-go"
 )
 
 type Client struct {
-	session quic.Connection 
-	stream  quic.Stream
+	session        quic.Connection
+	stream         quic.Stream
+	tm             *TaskManager
+	msg            chan *Message
+	messageHandler *MessageHandler
+
+	MachineID string
+	Hostname  string
+	IP        string
 }
 
 func NewClient(serverAddr string, tlsCfg *tls.Config, quicCfg *quic.Config) (*Client, error) {
@@ -21,22 +33,77 @@ func NewClient(serverAddr string, tlsCfg *tls.Config, quicCfg *quic.Config) (*Cl
 		return nil, err
 	}
 
-	
-
 	stream, err := session.OpenStreamSync(context.Background())
 	if err != nil {
 		return nil, err
 	}
 
-	return &Client{
-		session: session,
-		stream:  stream,
-	}, nil
+	udpAddr := getLocalIP(session)
+	if udpAddr == nil {
+
+	}
+
+	machineID, err := machineid.ID()
+	if err != nil {
+		return nil, err
+	}
+
+	hostname, err := machineid.Hostname()
+	if err != nil {
+		return nil, err
+	}
+
+	c := &Client{
+		IP:             udpAddr.IP.String(),
+		MachineID:      machineID,
+		session:        session,
+		stream:         stream,
+		Hostname:       hostname,
+		tm:             NewTaskManager(),
+		msg:            make(chan *Message, 100),
+		messageHandler: NewMessageHandler(100),
+	}
+	c.messageHandler.RegisterHandler("script_task", HandlerScriptTask)
+	go c.prosessMsg()
+	go c.run()
+	go c.StartHeartbeat(60 * time.Second)
+	return c, nil
 }
 
 func (c *Client) Close() {
 	c.stream.Close()
 	c.session.CloseWithError(0, "")
+	close(c.msg)
+}
+
+func (c *Client) SendMsg(msg *Message) error {
+	c.msg <- msg
+	return nil
+}
+
+func (c *Client) prosessMsg() {
+	for msg := range c.msg {
+		data, err := json.Marshal(msg)
+		if err != nil {
+			continue
+		}
+		c.Write(data)
+	}
+}
+
+func (c *Client) run() {
+	for {
+		data, err := c.Read()
+		if err != nil {
+			continue
+		}
+		var msg Message
+		err = json.Unmarshal(data, &msg)
+		if err != nil {
+			continue
+		}
+		c.messageHandler.SubmitMessage(&msg)
+	}
 }
 
 func (c *Client) Write(data []byte) (int, error) {
@@ -45,6 +112,41 @@ func (c *Client) Write(data []byte) (int, error) {
 
 func (c *Client) Read() ([]byte, error) {
 	return readPacket(c.stream)
+}
+
+type HeartbeatData struct {
+	MachineID string `json:"machine_id"`
+	Hostname  string `json:"hostname"`
+	IP        string `json:"ip"`
+}
+
+func (c *Client) StartHeartbeat(interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			heartbeatData := HeartbeatData{
+				MachineID: c.MachineID,
+				Hostname:  c.Hostname,
+				IP:        c.IP,
+			}
+
+			data, err := json.Marshal(heartbeatData)
+			if err != nil {
+				fmt.Println("Failed to marshal heartbeat data:", err)
+				continue
+			}
+
+			msg := Message{
+				ID:   uuid.New().String(),
+				Type: "heartbeat",
+				Data: data,
+			}
+
+			c.SendMsg(&msg)
+		}
+	}()
 }
 
 func writePacket(stream quic.Stream, data []byte) (int, error) {
@@ -71,4 +173,14 @@ func readPacket(stream quic.Stream) ([]byte, error) {
 	data := make([]byte, packetLength)
 	_, err = io.ReadFull(stream, data)
 	return data, err
+}
+
+func getLocalIP(session quic.Session) *net.UDPAddr {
+	udpConn := session.ConnectionState().UDPConn
+	if udpConn == nil {
+		return nil
+	}
+
+	localAddr := udpConn.LocalAddr().(*net.UDPAddr)
+	return localAddr
 }

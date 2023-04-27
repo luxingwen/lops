@@ -2,7 +2,6 @@ package quicnet
 
 import (
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 )
@@ -12,32 +11,15 @@ func TestRunScript(t *testing.T) {
 
 	script := `echo "Hello, World!"`
 	reqTask := &ScriptTask{
-		TaskID:      "testTask",
-		Interpreter: "", // 使用默认解释器
-		Content:     script,
-		Timeout:     time.Second * 5,
-		ScriptResult: &ScriptResult{
-			Stdout: make(chan string, 10),
-			Stderr: make(chan string, 10),
-		},
+		TaskID:       "testTask",
+		Interpreter:  "", // 使用默认解释器
+		Content:      script,
+		Timeout:      time.Second * 5,
+		ScriptResult: &ScriptResult{},
 	}
 
 	// 运行脚本
-	go cmdRunner.RunScript(reqTask)
-
-	var stdoutBuilder strings.Builder
-	var stderrBuilder strings.Builder
-
-	// 从输出通道中读取输出
-	for s := range reqTask.ScriptResult.Stdout {
-		stdoutBuilder.WriteString(s)
-	}
-	for s := range reqTask.ScriptResult.Stderr {
-		stderrBuilder.WriteString(s)
-	}
-
-	stdout := stdoutBuilder.String()
-	stderr := stderrBuilder.String()
+	cmdRunner.RunScript(reqTask)
 
 	// 检查输出
 	if reqTask.ScriptResult.Code != CodeSuccess {
@@ -45,14 +27,14 @@ func TestRunScript(t *testing.T) {
 	}
 
 	expectedStdout := "Hello, World!\n"
-	if stdout != expectedStdout {
-		t.Errorf("Expected stdout to be %q, but got %q", expectedStdout, stdout)
+	if reqTask.ScriptResult.Stdout != expectedStdout {
+		t.Errorf("Expected stdout to be %q, but got %q", expectedStdout, reqTask.ScriptResult.Stdout)
 	}
 
-	if stderr != "" {
-		t.Errorf("Expected stderr to be empty, but got %q", stderr)
+	if reqTask.ScriptResult.Stderr != "" {
+		t.Errorf("Expected stderr to be empty, but got %q", reqTask.ScriptResult.Stderr)
 	}
 
-	fmt.Printf("stdout: %s\n", stdout)
-	fmt.Printf("stderr: %s\n", stderr)
+	fmt.Printf("stdout: %s\n", reqTask.ScriptResult.Stdout)
+	fmt.Printf("stderr: %s\n", reqTask.ScriptResult.Stderr)
 }
