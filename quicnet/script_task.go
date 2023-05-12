@@ -21,6 +21,8 @@ type ScriptTask struct {
 	Suffix          string
 	Cancel          context.CancelFunc
 	ScriptResult    *ScriptResult
+	Env             map[string]string
+	MachineID       string
 }
 
 type ScriptErrorCode string
@@ -105,6 +107,6 @@ func HandlerScriptTask(msg *Message, c *Client) (err error) {
 		return
 	}
 	msg.Data = data
-	c.WriteResponse(msg)
+	c.SendMsg(msg)
 	return
 }

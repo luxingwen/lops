@@ -79,6 +79,12 @@ func (cr *CmdRunner) RunScript(reqtask *ScriptTask) {
 		cmd.Stdin = bytes.NewBufferString(reqtask.Stdin)
 	}
 
+	env := make([]string, 0, len(reqtask.Env))
+	for k, v := range reqtask.Env {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+	cmd.Env = append(os.Environ(), env...)
+
 	stdoutPipeReader, stdoutPipeWriter := io.Pipe()
 	stderrPipeReader, stderrPipeWriter := io.Pipe()
 

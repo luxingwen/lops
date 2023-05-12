@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"time"
 
@@ -16,6 +17,10 @@ import (
 )
 
 type Client struct {
+	tlsCfg     *tls.Config
+	quicCfg    *quic.Config
+	serverAddr string
+
 	session        quic.Connection
 	stream         quic.Stream
 	tm             *TaskManager
@@ -54,6 +59,9 @@ func NewClient(serverAddr string, tlsCfg *tls.Config, quicCfg *quic.Config) (*Cl
 	}
 
 	c := &Client{
+		tlsCfg:         tlsCfg,
+		quicCfg:        quicCfg,
+		serverAddr:     serverAddr,
 		IP:             udpAddr.IP.String(),
 		MachineID:      machineID,
 		session:        session,
@@ -95,7 +103,18 @@ func (c *Client) run() {
 	for {
 		data, err := c.Read()
 		if err != nil {
-			continue
+			if err == io.EOF {
+				// Connection is closed, try to reconnect
+				if err := c.Reconnect(); err != nil {
+					// Handle error
+					log.Printf("Failed to reconnect: %v", err)
+					time.Sleep(time.Second * 5) // Wait before next attempt
+					continue
+				}
+			} else {
+				// Other error, handle as you wish
+				continue
+			}
 		}
 		var msg Message
 		err = json.Unmarshal(data, &msg)
@@ -147,6 +166,22 @@ func (c *Client) StartHeartbeat(interval time.Duration) {
 			c.SendMsg(&msg)
 		}
 	}()
+}
+
+func (c *Client) Reconnect() error {
+	session, err := quic.DialAddr(c.serverAddr, c.tlsCfg, c.quicCfg)
+	if err != nil {
+		return err
+	}
+
+	stream, err := session.OpenStreamSync(context.Background())
+	if err != nil {
+		return err
+	}
+
+	c.session = session
+	c.stream = stream
+	return nil
 }
 
 func writePacket(stream quic.Stream, data []byte) (int, error) {
